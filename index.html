@@ -1,1 +1,268 @@
-Hello World
+<!doctype html>
+<html lang="en">
+  <head>
+    <base href="http://chegg-tutors.appspot.com/" />
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" type="text/css" href="/public/styles.css" />
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.2.0/jquery.min.js"></script>
+  </head>
+  <body>
+    <div id="chg-balloon-logo-container">
+        <img src="/public/img/logo.png" />
+    </div>
+    <div id="chg-balloon-controls-container">
+        <p>Enter a username to get started!</p>
+        <input id="chg-balloon-input" maxlength="2048" placeholder="e.g. BalloonMaster99"
+            name="username" autocomplete="off" type="text" value="" />
+        <button id="chg-balloon-submit">Check availability</button>
+    </div>
+    <div class="result-container">
+        <div id="chg-result-good" class="hide result text-center">Congrats! <b></b> is available.</div>
+        <div id="chg-result-bad" class="hide result text-center"><b></b> is not available. How about one of these:
+            <div class='suggestion text-left'></div>
+            <div class='suggestion text-left'></div>
+            <div class='suggestion text-left'></div>
+        </div>
+        <div id="chg-result-warn" class="hide result text-center">Please put in valid characters.</div>
+        <div id="chg-result-err" class="hide result text-center">Sorry! Something blew up on our end!</div>
+    </div>
+
+    <script type="text/javascript">
+
+        // The User search API accepts a comma-separated list of usernames, and returns
+        // user data for any matching records
+
+        $.ajax("/coding-challenge/api/user/?username=Hillary2016").done(function(data) {
+            // This logs Hillary2016's user data, since the username is registered
+            console.log(JSON.stringify(data));
+          });
+
+        $.ajax("/coding-challenge/api/user/?username=Trump4Pres,FeelTheBern1").done(function(data) {
+            // This logs Trump4Pres's user data, since the username is registered, but
+            // no user data for FeelTheBern1, since that username is not currently registered
+            console.log(JSON.stringify(data));
+          });
+
+        //IIFE for containing scope
+        (function() {
+            //helper functions
+            /*
+                Used to check if character is number
+                Input: String
+                Output: Bool
+            */
+            var isNumberic = function (char) {
+                return !isNaN(parseFloat(char)) && isFinite(char);
+            }
+
+            /*
+                Removes the numbers from the end of a username
+                Function keeps track of the number of numbers in the end of a string to return a substring
+                Input: String
+                Output: String
+            */
+            var removeNumbersFromEndOfUsername = function(username) {
+               var numInString = 0;
+
+                //check if end of username contains numbers
+                for (var i = username.length - 1; i >= 0; i--) {
+                    if (!isNumberic(username.charAt(i))) {
+                        break;
+                    }
+
+                    numInString++;
+                }
+
+                return username.substring(0, username.length - numInString);
+            }
+
+
+            /*
+                GET request for username
+                returns empty if user doesn't exist
+                Input: String
+                Output: Array
+            */
+            var getUser = function(username) {
+                var getData = {
+                    username: username
+                };
+
+                return $.get("/coding-challenge/api/user/", getData);
+            }
+
+            /*
+                Creates a list of possible usernames with numbers
+                Input: String
+                Output: Array
+            */
+            var getUserNamesWithNumbers = function (username, start, suggestions) {
+                start = start || 0;
+                var result = [];
+                var usernameWithoutNumsAtEnd = removeNumbersFromEndOfUsername(username);
+                var padded;
+
+                //debated between iterating 100 or 1000 times
+                //decided on 1000 because worse case would be 9 GET requests as opposed to 90
+                //could not request more than 100+
+                //currently at 100 iterations, worst case ~90 requests
+                for (var i = 1; i <= start + 100 && i <= 9999; i++) {
+                    padded = ('000' + i).slice(-4); // Prefix three zeros, and get the last 4 chars
+                    result.push(usernameWithoutNumsAtEnd + padded);
+                }
+
+                var suggestionsForQuery = result.join(",");
+                
+                //set data property for ajax request
+                var getData = {
+                    username: suggestionsForQuery
+                };
+
+                return $.get("/coding-challenge/api/user/", getData)
+                    .then(function(data) {
+                        suggestions = suggestions || [];
+
+                        for (var i = 0, j = 0; (i < result.length || j < data.length) && suggestions.length < 2; i++, j++) {
+                            //return if response item does not match with our premade list
+                            if (result[i] !== data[j].username) {
+                                //we check in order of results array, and when we find a suggestion, we decrement j to continue tracking
+                                //e.g. comparing a = [1,2,3] with b = [1,3], we store 2, i increases up while j stays on same index then a[2] = 3 === 3 = b[1]
+                                suggestions.push(result[i]);
+                                j--;
+                            }
+                        }
+
+                        //make a request for the next 100 items
+                        //suggestions is array, so passed in by reference
+                        //when we return from this execution context, suggestions will have new item
+                        if (suggestions.length < 2) {
+                            getUserNamesWithNumbers(username, start+100, suggestions);
+                        }
+
+                        return suggestions;
+                });
+            }
+
+            /*
+                Creates a username with a word prepended
+                Input: String
+                Output: Array
+            */
+            var getUserNamesWithWords = function (username) {
+                //extendable dictionary
+                var dict = {
+                    a: true,
+                    the: true,
+                    apple: true,
+                    her: true,
+                    his: true
+                };
+                var usernameWithoutNumsAtEnd = removeNumbersFromEndOfUsername(username);
+                var results = [];
+
+                for(var word in dict) {
+                    results.push(word + usernameWithoutNumsAtEnd);
+                }
+
+                var suggestionsForQuery = results.join(",");
+                
+                //set data property for ajax request
+                var getData = {
+                    username: suggestionsForQuery
+                };
+
+                return $.get("/coding-challenge/api/user/", getData)
+                    .then(function(data) {
+                        for (var i = 0; i < results.length; i++) {
+                            //return if response item doesn't exist or it does not match with our premade list
+                            if (!data[i] || results[i] !== data[i].username) {
+                                return results[i];
+                            }
+                        }
+                });
+            }
+
+            /*
+                Promisified request that either shows success message when username doesn't exist; otherwise, shows suggestions
+                Input: String
+                Output: Array
+            */
+            var getSuggestions = function(username) {
+                //run all async requests and wait for last response to come back
+                //promise chaining repesented by indentation
+                $.when(getUser(username), getUserNamesWithNumbers(username), getUserNamesWithWords(username))
+                    .done(function(resp1, resp2, resp3) {
+                        if (resp1[0].length === 0) {
+                            var goodResult = $('#chg-result-good');
+
+                            goodResult.find('b').text(username);
+                            goodResult.show();
+                        } else {
+                            var badResult = $('#chg-result-bad');
+                            var options = resp2.concat(resp3);
+
+                            badResult.find('b').text(username);
+                            badResult.find('.suggestion').each(function(index) {
+                                $(this).text(options[index]);
+                            });
+                            badResult.show();
+                        }
+                    })
+                    .fail(function(err) {
+                        $('#chg-result-err').show();
+                        console.log(err);
+                    });
+            }
+
+
+            $("#chg-balloon-submit").click(function(e) {
+                // This is where you come in!!
+                //on click, hide resulting messages
+                $('.result').hide();
+                var userName = $("#chg-balloon-input").val();
+                var suggestionsToUser;
+
+                //check if field is empty or contains illegal characters
+                if (userName !== "" && !userName.match(/^.*?(?=[\^#%&$\*:<>\?/\{\|\}!@¢]).*$/)) {
+                    getSuggestions(userName, suggestionsToUser);
+                } else {
+                    $('#chg-result-warn').show();
+                }
+            });
+        })();
+    </script>
+
+    <style>
+        .hide {
+            display: none;
+        }
+
+        .text-center {
+            text-align: center;
+        }
+
+        .text-left {
+            text-align: left;
+        }
+
+        .result-container {
+            padding-top: 20px;
+            margin-top: 20px;
+        }
+
+        .result {
+            margin: 0 auto;
+            max-width: 540px;
+        }
+
+        .suggestion {
+            border-bottom: 1px solid grey;
+            padding: 10px;
+        }
+
+        .suggestion:last-child {
+            border-bottom: 0;
+        }
+    </style>
+  </body>
+</html>
